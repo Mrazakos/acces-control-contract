@@ -1,1 +1,42 @@
 node_modules/
+
+# Hardhat files
+cache/
+artifacts/
+
+# TypeScript
+*.tsbuildinfo
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Coverage reports
+coverage/
+coverage.json
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Gas reports
+gas-report.txt
+
+# Solidity coverage
+.coverage_artifacts/
+.coverage_cache/
+.coverage_contracts/

@@ -16,7 +16,7 @@ contract AccessControl is Ownable, Pausable, ReentrancyGuard {
     uint256 public constant MAX_PUBLIC_KEY_LENGTH = 512;
     uint256 public constant MAX_REVOKED_SIGNATURES = 1000;
 
-    // Clean struct design
+    // Lock struct design
     struct Lock {
         address owner;
         string publicKey;
