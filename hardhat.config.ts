@@ -33,4 +33,10 @@ export default {
     alwaysGenerateOverloads: false,
     externalArtifacts: ["externalArtifacts/*.json"],
   },
+  gasReporter: {
+    enabled: true,
+    currency: "USD",
+    outputFile: "gas-report.txt", // Optional: saves report to file
+    noColors: true, // For CI output
+  },
 };
