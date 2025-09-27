@@ -28,7 +28,7 @@ contract AccessControl is Ownable, Pausable, ReentrancyGuard {
     mapping(uint256 => Lock) public locks;
     mapping(uint256 => mapping(bytes32 => bool)) public revokedSignatures;
     
-    uint256 private _lockCounter = 1;
+    uint256 private _lockCounter = 0;
     
     // Events
     event LockRegistered(uint256 indexed lockId, address indexed owner, string publicKey);
@@ -74,7 +74,7 @@ contract AccessControl is Ownable, Pausable, ReentrancyGuard {
         if (bytes(publicKey).length == 0) revert PublicKeyEmpty();
         if (bytes(publicKey).length > MAX_PUBLIC_KEY_LENGTH) revert PublicKeyTooLong(bytes(publicKey).length);
         
-        uint256 lockId = _lockCounter++;
+        uint256 lockId = ++_lockCounter;
         
         locks[lockId] = Lock({
             owner: msg.sender,
@@ -179,7 +179,7 @@ contract AccessControl is Ownable, Pausable, ReentrancyGuard {
     }
 
     function getTotalLocks() external view returns (uint256) {
-        return _lockCounter - 1;
+        return _lockCounter;
     }
 
     function lockExistsView(uint256 lockId) external view returns (bool) {
