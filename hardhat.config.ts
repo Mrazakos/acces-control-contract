@@ -2,7 +2,9 @@ import { task } from "hardhat/config";
 import "@nomiclabs/hardhat-ethers";
 import "@nomiclabs/hardhat-waffle";
 import "@typechain/hardhat";
+import * as dotenv from "dotenv";
 
+dotenv.config();
 const { ALCHEMY_API_KEY, SEPOLIA_PRIVATE_KEY } = process.env;
 
 task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
@@ -22,7 +24,7 @@ export default {
       url: "http://127.0.0.1:8545",
     },
     sepolia: {
-      url: `https://eth-sepolia.alchemyapi.io/v2/${ALCHEMY_API_KEY}`,
+      url: `https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
       accounts:
         SEPOLIA_PRIVATE_KEY !== undefined ? [`0x${SEPOLIA_PRIVATE_KEY}`] : [],
     },
