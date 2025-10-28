@@ -4,35 +4,37 @@ pragma solidity ^0.8.19;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /**
  * @title AccessControl
- * @dev Clean, production-ready smart contract using OpenZeppelin inheritance
- * @notice Much simpler and more secure than custom implementations
+ * @dev Stores public key hash, verifies signatures before revocation
+ * @notice Lock stores full public key locally; sends it with transactions for verification
  */
 contract AccessControl is Ownable, Pausable, ReentrancyGuard {
+    using ECDSA for bytes32;
     
     // Security constants
     uint256 public constant MAX_PUBLIC_KEY_LENGTH = 512;
     uint256 public constant MAX_REVOKED_SIGNATURES = 1000;
 
-    // Lock struct design
+    // Lock struct - stores signer address derived from public key
     struct Lock {
-        address owner;
-        string publicKey;
+        address owner;              // For access control only (who can revoke signatures)
+        address signerAddress;      // Ethereum address derived from lock's ECDSA public key
         uint256 revokedCount;
         bool exists;
     }
 
-    // Simple storage
+    // Storage
     mapping(uint256 => Lock) public locks;
     mapping(uint256 => mapping(bytes32 => bool)) public revokedSignatures;
     
     uint256 private _lockCounter = 0;
     
     // Events
-    event LockRegistered(uint256 indexed lockId, address indexed owner, string publicKey);
-    event SignatureRevoked(uint256 indexed lockId, bytes32 indexed signatureHash, address indexed owner);
+    event LockRegistered(uint256 indexed lockId, address indexed owner, address indexed signerAddress);
+    event SignatureRevoked(uint256 indexed lockId, bytes32 indexed signatureHash, bytes32 indexed vcHash, address owner);
     event LockOwnershipTransferred(uint256 indexed lockId, address indexed previousOwner, address indexed newOwner);
     
     // Custom errors
@@ -45,11 +47,22 @@ contract AccessControl is Ownable, Pausable, ReentrancyGuard {
     error InvalidAddress();
     error SameOwner();
     error TooManyRevokedSignatures();
+    error InvalidVCHash();
+    error SignatureVerificationFailed(bytes32 vcHash, bytes signature);
 
-    // Simple modifiers
+    // Modifiers
     modifier onlyLockOwner(uint256 lockId) {
         if (locks[lockId].owner != msg.sender) {
             revert NotLockOwner(msg.sender, lockId);
+        }
+        _;
+    }
+
+    modifier onlyWithLockSignature(uint256 lockId, bytes calldata signature, bytes32 vcHash) {
+        Lock storage lock = locks[lockId];
+
+        if (!_verifySignature(lockId, signature, vcHash)) {
+            revert SignatureVerificationFailed(vcHash, signature);
         }
         _;
     }
@@ -62,7 +75,9 @@ contract AccessControl is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @dev Register a new lock
+     * @dev Register a new lock - stores signer address derived from public key
+     * @param publicKey The lock's ECDSA public key
+     * @notice Lock should save its keypair locally; contract stores the derived Ethereum address
      */
     function registerLock(string calldata publicKey) 
         external 
@@ -70,39 +85,54 @@ contract AccessControl is Ownable, Pausable, ReentrancyGuard {
         nonReentrant 
         returns (uint256) 
     {
-        // Validation
         if (bytes(publicKey).length == 0) revert PublicKeyEmpty();
         if (bytes(publicKey).length > MAX_PUBLIC_KEY_LENGTH) revert PublicKeyTooLong(bytes(publicKey).length);
         
         uint256 lockId = ++_lockCounter;
         
+        // Derive Ethereum address from the lock's public key
+        // This is what ECDSA signature recovery will give us
+        address signerAddress = address(uint160(uint256(keccak256(bytes(publicKey)))));
+        
         locks[lockId] = Lock({
             owner: msg.sender,
-            publicKey: publicKey,
+            signerAddress: signerAddress,
             revokedCount: 0,
             exists: true
         });
         
-        emit LockRegistered(lockId, msg.sender, publicKey);
+        emit LockRegistered(lockId, msg.sender, signerAddress);
         return lockId;
     }
-    
+
     /**
-     * @dev Revoke a signature
+     * @dev Revoke a signature with verification
+     * @param lockId The lock ID
+     * @param signature The signature to revoke (raw bytes)
+     * @param vcHash Hash of the verifiable credential that was signed
+     * @notice Verifies that signature actually corresponds to the VC before revocation
      */
-    function revokeSignature(uint256 lockId, string calldata signature) 
+    function revokeSignature(
+        uint256 lockId,
+        bytes calldata signature,
+        bytes32 vcHash
+    ) 
         external 
         whenNotPaused
         lockExists(lockId)
         onlyLockOwner(lockId)
+        onlyWithLockSignature(lockId, signature, vcHash)
         nonReentrant
     {
-        if (bytes(signature).length == 0) revert SignatureEmpty();
+        if (signature.length == 0) revert SignatureEmpty();
+        if (vcHash == bytes32(0)) revert InvalidVCHash();
         
         Lock storage lock = locks[lockId];
+        
         if (lock.revokedCount >= MAX_REVOKED_SIGNATURES) revert TooManyRevokedSignatures();
         
-        bytes32 signatureHash = keccak256(bytes(signature));
+        bytes32 signatureHash = keccak256(signature);
+        
         if (revokedSignatures[lockId][signatureHash]) {
             revert SignatureAlreadyRevoked(lockId, signatureHash);
         }
@@ -110,49 +140,50 @@ contract AccessControl is Ownable, Pausable, ReentrancyGuard {
         revokedSignatures[lockId][signatureHash] = true;
         ++lock.revokedCount;
         
-        emit SignatureRevoked(lockId, signatureHash, msg.sender);
+        emit SignatureRevoked(lockId, signatureHash, vcHash, msg.sender);
     }
 
+
     /**
-     * @dev Batch revoke signatures
+     * @dev Internal function to verify signature corresponds to VC hash
+     * @param lockId The lock's ID
+     * @param signature The ECDSA signature bytes from the lock
+     * @param vcHash Hash of the verifiable credential that was signed
+     * @return bool True if signature is valid for the VC hash
+     * @notice Recovers signer address from signature and compares with stored address
      */
-    function batchRevokeSignatures(uint256 lockId, string[] calldata signatures)
-        external
-        whenNotPaused
-        lockExists(lockId)
-        onlyLockOwner(lockId)
-        nonReentrant
-    {
+    function _verifySignature(
+        uint256 lockId,
+        bytes calldata signature,
+        bytes32 vcHash
+    ) internal view returns (bool) {
         Lock storage lock = locks[lockId];
-        uint256 count = signatures.length;
         
-        if (lock.revokedCount + count > MAX_REVOKED_SIGNATURES) revert TooManyRevokedSignatures();
+        // Recover the Ethereum address that created this signature
+        address recoveredSigner = vcHash.toEthSignedMessageHash().recover(signature);
         
-        for (uint256 i; i < count;) {
-            if (bytes(signatures[i]).length == 0) revert SignatureEmpty();
-            
-            bytes32 signatureHash = keccak256(bytes(signatures[i]));
-            if (revokedSignatures[lockId][signatureHash]) {
-                revert SignatureAlreadyRevoked(lockId, signatureHash);
-            }
-            
-            revokedSignatures[lockId][signatureHash] = true;
-            emit SignatureRevoked(lockId, signatureHash, msg.sender);
-            
-            unchecked { ++i; }
-        }
-        
-        lock.revokedCount += count;
+        // Compare with the stored signer address from registration
+        return recoveredSigner == lock.signerAddress;
     }
 
     /**
-     * @dev Transfer lock ownership
+     * @dev Transfer lock ownership with signature verification
+     * @param lockId The lock ID
+     * @param signature The signature from the lock proving ownership
+     * @param vcHash Hash used for signature verification
+     * @param newOwner New owner address
      */
-    function transferLockOwnership(uint256 lockId, address newOwner) 
+    function transferLockOwnership(
+        uint256 lockId,
+        bytes calldata signature,
+        bytes32 vcHash,
+        address newOwner
+    ) 
         external 
         whenNotPaused
         lockExists(lockId)
         onlyLockOwner(lockId)
+        onlyWithLockSignature(lockId, signature, vcHash)
         nonReentrant
     {
         if (newOwner == address(0)) revert InvalidAddress();
@@ -163,19 +194,29 @@ contract AccessControl is Ownable, Pausable, ReentrancyGuard {
         
         emit LockOwnershipTransferred(lockId, previousOwner, newOwner);
     }
+
     
-    // View functions (gas-free when called externally)
-    
-    function getPublicKey(uint256 lockId) external view lockExists(lockId) returns (string memory) {
-        return locks[lockId].publicKey;
+    function getSignerAddress(uint256 lockId) external view lockExists(lockId) returns (address) {
+        return locks[lockId].signerAddress;
     }
 
     function getLockOwner(uint256 lockId) external view lockExists(lockId) returns (address) {
         return locks[lockId].owner;
     }
+    
+    function verifyPublicKey(uint256 lockId, string calldata publicKey) 
+        external 
+        view 
+        lockExists(lockId) 
+        returns (bool) 
+    {
+        // Derive address from provided public key and compare with stored signer address
+        address derivedAddress = address(uint160(uint256(keccak256(bytes(publicKey)))));
+        return derivedAddress == locks[lockId].signerAddress;
+    }
 
-    function isSignatureRevoked(uint256 lockId, string calldata signature) external view returns (bool) {
-        return revokedSignatures[lockId][keccak256(bytes(signature))];
+    function isSignatureRevoked(uint256 lockId, bytes calldata signature) external view returns (bool) {
+        return revokedSignatures[lockId][keccak256(signature)];
     }
 
     function getTotalLocks() external view returns (uint256) {
@@ -194,20 +235,20 @@ contract AccessControl is Ownable, Pausable, ReentrancyGuard {
         external 
         view 
         lockExists(lockId) 
-        returns (address owner, string memory publicKey, uint256 revokedCount, bool exists) 
+        returns (address owner, address signerAddress, uint256 revokedCount, bool exists) 
     {
         Lock memory lock = locks[lockId];
-        return (lock.owner, lock.publicKey, lock.revokedCount, lock.exists);
+        return (lock.owner, lock.signerAddress, lock.revokedCount, lock.exists);
     }
 
-    // Admin functions (inherited from OpenZeppelin's Ownable)
+    // Admin functions
     
     function pause() external onlyOwner {
-        _pause(); // OpenZeppelin's implementation
+        _pause();
     }
 
     function unpause() external onlyOwner {
-        _unpause(); // OpenZeppelin's implementation
+        _unpause();
     }
 
     function emergencyTransferLockOwnership(uint256 lockId, address newOwner) 
