@@ -214,10 +214,10 @@ contract AccessControl is Ownable, Pausable, ReentrancyGuard {
 
     /**
      * @dev Check if a credential (vcHash) is revoked
-     * @param lockId The lock ID
+     * @param lockId The lock ID that issued the credential
      * @param vcHash The credential hash to check
-     * @return bool True if the credential is revoked
-     * @notice This is what the physical lock calls to verify a credential
+     * @return bool True if the credential is revoked, false if still valid
+     * @notice PUBLIC VIEW - Anyone (including VC holders) can check if their credential is still valid
      */
     function isCredentialRevoked(uint256 lockId, bytes32 vcHash) external view returns (bool) {
         return revokedCredentials[lockId][vcHash];
