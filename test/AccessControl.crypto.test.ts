@@ -2,9 +2,30 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { Contract } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
-import { CryptoUtils } from "@mrazakos/vc-ecdsa-crypto";
+import { OnChainService, ECDSACryptoService } from "@mrazakos/vc-ecdsa-crypto";
+
+/**
+ * AccessControl Smart Contract Test Suite
+ *
+ * Uses @mrazakos/vc-ecdsa-crypto v3.0+ with OnChainService for blockchain-compatible signing.
+ *
+ * Key Changes from v2.x:
+ * - Uses OnChainService.signForBlockchain() for Ethereum-prefixed signatures
+ * - Compatible with Solidity's ecrecover function
+ * - Uses ECDSACryptoService.generateIdentity() for key generation
+ * - Public keys are now Ethereum addresses (20 bytes) instead of full public keys (65 bytes)
+ * - All signatures include Ethereum's "\x19Ethereum Signed Message:\n32" prefix
+ *
+ * Testing Strategy:
+ * - Real cryptographic operations (no mocks)
+ * - Integration with actual smart contract
+ * - Tests authentication, revocation, and ownership transfer
+ * - Edge cases: wrong keys, mismatched hashes, replay attacks
+ */
 
 describe("AccessControl with VC-ECDSA-Crypto", function () {
+  let onChainService: OnChainService;
+  let cryptoService: ECDSACryptoService;
   let accessControl: Contract;
   let owner: SignerWithAddress;
   let lockOwner: SignerWithAddress;
@@ -20,6 +41,10 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
   before(async function () {
     [owner, lockOwner, newOwner] = await ethers.getSigners();
 
+    // Initialize services for blockchain operations
+    cryptoService = new ECDSACryptoService();
+    onChainService = new OnChainService(cryptoService);
+
     const AccessControlFactory = await ethers.getContractFactory(
       "AccessControl"
     );
@@ -29,7 +54,11 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
 
   describe("Integration with Real Crypto", function () {
     it("Should generate a valid ECDSA key pair", async function () {
-      lockKeyPair = await CryptoUtils.generateKeyPair();
+      const identity = await cryptoService.generateIdentity();
+      lockKeyPair = {
+        publicKey: identity.address, // Use Ethereum address for on-chain
+        privateKey: identity.privateKey,
+      };
 
       expect(lockKeyPair.publicKey).to.be.a("string");
       expect(lockKeyPair.privateKey).to.be.a("string");
@@ -69,20 +98,21 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
         timestamp: Date.now(),
       };
 
-      const userMetaDataHash = CryptoUtils.hash(JSON.stringify(userMetaData));
+      const userMetaDataHash = cryptoService.hash(JSON.stringify(userMetaData));
 
       vcInput = {
         userMetaDataHash: userMetaDataHash,
         issuanceDate: new Date().toISOString(),
       };
 
-      // Sign the VC
-      const signResult = await CryptoUtils.sign(
-        vcInput,
+      // Sign using OnChainService for blockchain compatibility
+      const vcHashToSign = cryptoService.hash(JSON.stringify(vcInput));
+      const signResult = await onChainService.signForBlockchain(
+        vcHashToSign,
         lockKeyPair.privateKey
       );
       signature = signResult.signature;
-      vcHash = signResult.signedMessageHash;
+      vcHash = signResult.signedHash;
 
       expect(signature).to.be.a("string");
       expect(vcHash).to.be.a("string");
@@ -90,11 +120,11 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
     });
 
     it("Should verify signature locally before revoking", async function () {
-      // Verify using the crypto library
-      const isValid = CryptoUtils.verify(
+      // Verify using the on-chain service with Ethereum address
+      const isValid = await onChainService.verifyBlockchainSignature(
         vcHash,
         signature,
-        lockKeyPair.publicKey
+        lockKeyPair.publicKey // This is the Ethereum address
       );
       expect(isValid).to.equal(true);
     });
@@ -139,16 +169,17 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
 
     it("Should create a new signature for ownership transfer", async function () {
       const transferVcInput = {
-        userMetaDataHash: CryptoUtils.hash("ownership-transfer"),
+        userMetaDataHash: cryptoService.hash("ownership-transfer"),
         issuanceDate: new Date().toISOString(),
       };
 
-      const signResult = await CryptoUtils.sign(
-        transferVcInput,
+      const hashToSign = cryptoService.hash(JSON.stringify(transferVcInput));
+      const signResult = await onChainService.signForBlockchain(
+        hashToSign,
         lockKeyPair.privateKey
       );
       transferSignature = signResult.signature;
-      transferVcHash = signResult.signedMessageHash;
+      transferVcHash = signResult.signedHash;
 
       expect(transferSignature).to.be.a("string");
     });
@@ -180,11 +211,15 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
     });
 
     it("Should reject transfer from old owner", async function () {
-      const anotherSignResult = await CryptoUtils.sign(
-        {
-          userMetaDataHash: CryptoUtils.hash("another-transfer"),
-          issuanceDate: new Date().toISOString(),
-        },
+      const anotherTransferInput = {
+        userMetaDataHash: cryptoService.hash("another-transfer"),
+        issuanceDate: new Date().toISOString(),
+      };
+      const anotherHash = cryptoService.hash(
+        JSON.stringify(anotherTransferInput)
+      );
+      const anotherSignResult = await onChainService.signForBlockchain(
+        anotherHash,
         lockKeyPair.privateKey
       );
 
@@ -193,7 +228,7 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
           .connect(lockOwner)
           .transferLockOwnership(
             lockId,
-            anotherSignResult.signedMessageHash,
+            anotherSignResult.signedHash,
             anotherSignResult.signature,
             owner.address
           )
@@ -203,13 +238,13 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
 
   describe("Multiple Locks with Different Keys", function () {
     it("Should register multiple locks with different key pairs", async function () {
-      const keyPair1 = await CryptoUtils.generateKeyPair();
-      const keyPair2 = await CryptoUtils.generateKeyPair();
-      const keyPair3 = await CryptoUtils.generateKeyPair();
+      const identity1 = await cryptoService.generateIdentity();
+      const identity2 = await cryptoService.generateIdentity();
+      const identity3 = await cryptoService.generateIdentity();
 
-      await accessControl.connect(lockOwner).registerLock(keyPair1.publicKey);
-      await accessControl.connect(lockOwner).registerLock(keyPair2.publicKey);
-      await accessControl.connect(newOwner).registerLock(keyPair3.publicKey);
+      await accessControl.connect(lockOwner).registerLock(identity1.address);
+      await accessControl.connect(lockOwner).registerLock(identity2.address);
+      await accessControl.connect(newOwner).registerLock(identity3.address);
 
       const totalLocks = await accessControl.getTotalLocks();
       expect(totalLocks).to.equal(4); // 1 from previous tests + 3 new ones
@@ -231,7 +266,11 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
     let testKeyPair: { publicKey: string; privateKey: string };
 
     before(async function () {
-      testKeyPair = await CryptoUtils.generateKeyPair();
+      const identity = await cryptoService.generateIdentity();
+      testKeyPair = {
+        publicKey: identity.address,
+        privateKey: identity.privateKey,
+      };
       const tx = await accessControl
         .connect(lockOwner)
         .registerLock(testKeyPair.publicKey);
@@ -248,24 +287,25 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
       // Create and revoke 5 different credentials
       for (let i = 0; i < 5; i++) {
         const vcInput = {
-          userMetaDataHash: CryptoUtils.hash(`test-credential-${i}`),
+          userMetaDataHash: cryptoService.hash(`test-credential-${i}`),
           issuanceDate: new Date().toISOString(),
         };
 
-        const signResult = await CryptoUtils.sign(
-          vcInput,
+        const hashToSign = cryptoService.hash(JSON.stringify(vcInput));
+        const signResult = await onChainService.signForBlockchain(
+          hashToSign,
           testKeyPair.privateKey
         );
         credentials.push({
           signature: signResult.signature,
-          vcHash: signResult.signedMessageHash,
+          vcHash: signResult.signedHash,
         });
 
         await accessControl
           .connect(lockOwner)
           .revokeCredential(
             testLockId,
-            signResult.signedMessageHash,
+            signResult.signedHash,
             signResult.signature
           );
       }
@@ -292,8 +332,17 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
     let wrongKeyPair: { publicKey: string; privateKey: string };
 
     before(async function () {
-      edgeKeyPair = await CryptoUtils.generateKeyPair();
-      wrongKeyPair = await CryptoUtils.generateKeyPair();
+      const edgeIdentity = await cryptoService.generateIdentity();
+      const wrongIdentity = await cryptoService.generateIdentity();
+
+      edgeKeyPair = {
+        publicKey: edgeIdentity.address,
+        privateKey: edgeIdentity.privateKey,
+      };
+      wrongKeyPair = {
+        publicKey: wrongIdentity.address,
+        privateKey: wrongIdentity.privateKey,
+      };
 
       const tx = await accessControl
         .connect(lockOwner)
@@ -307,13 +356,14 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
 
     it("Should reject signature from wrong private key", async function () {
       const vcInput = {
-        userMetaDataHash: CryptoUtils.hash("test-data"),
+        userMetaDataHash: cryptoService.hash("test-data"),
         issuanceDate: new Date().toISOString(),
       };
 
+      const hashToSign = cryptoService.hash(JSON.stringify(vcInput));
       // Sign with the WRONG key pair
-      const signResult = await CryptoUtils.sign(
-        vcInput,
+      const signResult = await onChainService.signForBlockchain(
+        hashToSign,
         wrongKeyPair.privateKey
       );
 
@@ -322,7 +372,7 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
           .connect(lockOwner)
           .revokeCredential(
             edgeLockId,
-            signResult.signedMessageHash,
+            signResult.signedHash,
             signResult.signature
           )
       ).to.be.revertedWith("AuthenticationFailed");
@@ -330,17 +380,18 @@ describe("AccessControl with VC-ECDSA-Crypto", function () {
 
     it("Should reject if VC hash doesn't match signature", async function () {
       const vcInput = {
-        userMetaDataHash: CryptoUtils.hash("original-data"),
+        userMetaDataHash: cryptoService.hash("original-data"),
         issuanceDate: new Date().toISOString(),
       };
 
-      const signResult = await CryptoUtils.sign(
-        vcInput,
+      const hashToSign = cryptoService.hash(JSON.stringify(vcInput));
+      const signResult = await onChainService.signForBlockchain(
+        hashToSign,
         edgeKeyPair.privateKey
       );
 
       // Use a different VC hash
-      const differentHash = CryptoUtils.hash("different-data");
+      const differentHash = cryptoService.hash("different-data");
 
       await expect(
         accessControl
