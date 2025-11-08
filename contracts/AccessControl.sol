@@ -235,19 +235,6 @@ contract AccessControl is Ownable, Pausable, ReentrancyGuard {
         return locks[lockId].revokedCount;
     }
 
-    function getRevokedSignatures(uint256 lockId, bytes32[] calldata vcHashes) 
-        external 
-        view 
-        lockExists(lockId) 
-        returns (bool[] memory) 
-    {
-        bool[] memory results = new bool[](vcHashes.length);
-        for (uint256 i = 0; i < vcHashes.length; i++) {
-            results[i] = revokedCredentials[lockId][vcHashes[i]];
-        }
-        return results;
-    }
-
     function getLockInfo(uint256 lockId) 
         external 
         view 
