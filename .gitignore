@@ -34,8 +34,16 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-# Gas reports
-gas-report.txt
+# Performance test reports
+reports/*.txt
+reports/*.json
+reports/*.md
+!reports/README.md
+!reports/.gitkeep
+
+# Benchmark results (keep historical)
+benchmarks/benchmark-*.json
+!benchmarks/historical/
 
 # Solidity coverage
 .coverage_artifacts/

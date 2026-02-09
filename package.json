@@ -5,6 +5,15 @@
   "main": "index.js",
   "scripts": {
     "test": "hardhat test",
+    "test:unit": "npx hardhat test .\\test\\unit\\AccessControl.crypto.test.ts",
+    "test:load": "npx hardhat test .\\test\\load\\AccessControl.load.stress.test.ts",
+    "test:benchmark": "npx hardhat test .\\test\\benchmark\\AccessControl.benchmark.gas.test.ts",
+    "test:integration": "npx hardhat test .\\test\\integration\\*.test.ts",
+    "test:performance": "npx hardhat test .\\test\\performance\\*.test.ts",
+    "test:all": "hardhat test",
+    "test:gas": "set REPORT_GAS=true&& hardhat test",
+    "report": "ts-node scripts/generate-report.ts",
+    "test:full": "npm run test:all && npm run report",
     "deploy": "hardhat run scripts/deploy.ts --network localhost",
     "compile": "hardhat compile"
   },
@@ -28,7 +37,7 @@
     "typescript": "^4.0.0"
   },
   "dependencies": {
-    "@mrazakos/vc-ecdsa-crypto": "^3.0.0",
+    "@mrazakos/vc-ecdsa-crypto": "^3.1.0",
     "@openzeppelin/contracts": "^4.9.6",
     "dotenv": "^17.2.2"
   }

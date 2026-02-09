@@ -44,9 +44,18 @@ export default {
     externalArtifacts: ["externalArtifacts/*.json"],
   },
   gasReporter: {
-    enabled: true,
+    enabled: process.env.REPORT_GAS !== undefined,
     currency: "USD",
-    outputFile: "gas-report.txt", // Optional: saves report to file
-    noColors: true, // For CI output
+    outputFile: "reports/gas-report.txt",
+    noColors: true,
+    coinmarketcap: process.env.COINMARKETCAP_API_KEY || undefined,
+    excludeContracts: [],
+    src: "./contracts",
+    showTimeSpent: true,
+    showMethodSig: true,
+    onlyCalledMethods: false,
+  },
+  mocha: {
+    timeout: 100000, // Extended timeout for load tests
   },
 };
