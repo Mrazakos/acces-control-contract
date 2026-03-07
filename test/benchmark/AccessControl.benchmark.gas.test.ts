@@ -480,7 +480,10 @@ describe("AccessControl - Performance Benchmarks", function () {
         keyPair.privateKey,
       );
       revokedHash = result1.signedHash;
-      const authSig = result1.signature;
+      const authSig = await onChainService.signForBlockchain(
+        revokedHash,
+        keyPair.privateKey,
+      );
       await accessControl
         .connect(owner)
         .revokeCredential(lockId, revokedHash, authSig);
@@ -570,11 +573,10 @@ describe("AccessControl - Performance Benchmarks", function () {
         10,
         async () => {
           const message = ethers.utils.id("transfer-" + Date.now());
-          const signResult = await onChainService.signForBlockchain(
-            message,
+          const authSignature = await onChainService.signForBlockchain(
             keyPair.privateKey,
+            message,
           );
-          const authSignature = signResult.signature;
 
           const start = performance.now();
           const tx = await accessControl
@@ -604,3 +606,4 @@ describe("AccessControl - Performance Benchmarks", function () {
     });
   });
 });
+
