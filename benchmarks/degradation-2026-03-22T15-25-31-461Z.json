@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-03-22T15:25:31.461Z",
+  "degradationData": [
+    {
+      "transactionCount": 0,
+      "operation": "register",
+      "avgTimeMs": 34.16882000000014,
+      "avgGas": "105773",
+      "iterations": 5,
+      "timestamp": "2026-03-22T15:23:35.988Z"
+    },
+    {
+      "transactionCount": 100,
+      "operation": "register",
+      "avgTimeMs": 14.132159999999931,
+      "avgGas": "102353",
+      "iterations": 5,
+      "timestamp": "2026-03-22T15:23:39.511Z"
+    },
+    {
+      "transactionCount": 500,
+      "operation": "register",
+      "avgTimeMs": 34.94820000000182,
+      "avgGas": "102353",
+      "iterations": 5,
+      "timestamp": "2026-03-22T15:23:58.259Z"
+    },
+    {
+      "transactionCount": 999,
+      "operation": "register",
+      "avgTimeMs": 18.128199999999197,
+      "avgGas": "102353",
+      "iterations": 5,
+      "timestamp": "2026-03-22T15:24:36.026Z"
+    },
+    {
+      "transactionCount": 0,
+      "operation": "revoke",
+      "avgTimeMs": 11.54775999999838,
+      "avgGas": "72096",
+      "iterations": 5,
+      "timestamp": "2026-03-22T15:24:36.114Z"
+    },
+    {
+      "transactionCount": 100,
+      "operation": "revoke",
+      "avgTimeMs": 34.86700000000128,
+      "avgGas": "68667",
+      "iterations": 5,
+      "timestamp": "2026-03-22T15:24:39.108Z"
+    },
+    {
+      "transactionCount": 500,
+      "operation": "revoke",
+      "avgTimeMs": 33.153879999998026,
+      "avgGas": "68676",
+      "iterations": 5,
+      "timestamp": "2026-03-22T15:24:55.318Z"
+    }
+  ]
+}

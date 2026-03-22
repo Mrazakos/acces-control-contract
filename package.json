@@ -7,6 +7,7 @@
     "test": "hardhat test",
     "test:unit": "npx hardhat test .\\test\\unit\\AccessControl.crypto.test.ts",
     "test:load": "npx hardhat test .\\test\\load\\AccessControl.load.stress.test.ts",
+    "test:latency:simple": "npx hardhat test .\\test\\load\\AccessControl.simple.latency.test.ts",
     "test:benchmark": "npx hardhat test .\\test\\benchmark\\AccessControl.benchmark.gas.test.ts",
     "test:throughput": "npx hardhat test .\\test\\throughput\\AccessControl.throughput.test.ts",
     "test:integration": "npx hardhat test .\\test\\integration\\*.test.ts",
